@@ -1,0 +1,1 @@
+from coded_mask_2d import ToyCodedMaskDetector2D
