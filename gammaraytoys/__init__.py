@@ -1,1 +1,1 @@
-from detectors import ToyCodedMaskDetector2D
+from .detectors import ToyCodedMaskDetector2D

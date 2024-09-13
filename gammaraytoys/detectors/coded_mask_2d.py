@@ -18,6 +18,18 @@ class ToyCodedMaskDetector2D:
     @property
     def mask(self):
         return self._mask
+
+    @property
+    def detector_axis(self):
+        return self._det_axis
+
+    @property
+    def detector_efficiency(self):
+        return self._det_eff
+
+    @property
+    def mask_separation(self):
+        return self._mask_sep
     
     @classmethod
     def create_random_mask(cls, mask_size, mask_npix, mask_separation, open_fraction, detector_size, detector_npix, detector_efficiency):
