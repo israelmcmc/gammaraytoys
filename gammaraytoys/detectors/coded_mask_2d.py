@@ -40,7 +40,7 @@ class ToyCodedMaskDetector2D:
                    mask_separation = mask_separation, 
                    detector_efficiency = detector_efficiency)
 
-    def plot(self, ax = None, expectation = None, angle = None):
+    def plot(self, ax = None, data = None, angle = None):
 
         if ax is None:
             fig,ax = plt.subplots()
@@ -64,12 +64,12 @@ class ToyCodedMaskDetector2D:
                 color = 'black')
         ax.plot([self._mask.axis.lo_lim,self._mask.axis.hi_lim],[-.2,-.2], color = 'black')
 
-        if expectation is not None:
+        if data is not None:
             axr = ax.twinx()
 
-            expectation.plot(axr)
-            
-            axr.set_ylim(-2*np.max(expectation)*.5/(self._mask_sep + .5), 2*np.max(expectation))
+            data.plot(axr)
+
+            axr.set_ylim(-2*np.maximum(1, np.max(data))*.5/(self._mask_sep + .5), 2*np.maximum(1,np.max(data)))
 
             axr.set_ylabel("Expected counts")
         
