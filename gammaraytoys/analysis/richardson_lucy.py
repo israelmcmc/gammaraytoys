@@ -27,3 +27,7 @@ def richardson_lucy(data, model, response, response_norm = None, niter = 1):
         model *= coeff / response_norm
 
     return model
+
+# class RichardsonLucy:
+# Wrap histpy, bkg nuiscance and multi-dimensional responses
+#     def __init__(self, response, response_norm = None, nuisance_dist = None):
