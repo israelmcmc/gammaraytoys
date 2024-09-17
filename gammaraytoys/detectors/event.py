@@ -1,5 +1,5 @@
 import numpy as np
-from astropy.coordinates import CartesianRepresentation
+from astropy.coordinates import CartesianRepresentation, Angle
 from astropy import units as u
 import yaml
 
@@ -34,7 +34,7 @@ class Particle:
 
         self.particle_type = particle_type
         self.position = position
-        self.direction = direction
+        self.direction = u.Quantity(Angle(direction).wrap_at(360*u.deg))
         self.energy = energy
         self.interaction = None
         self.reco = None

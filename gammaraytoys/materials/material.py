@@ -27,7 +27,12 @@ class Material:
         
         self._compton_loginterp = interp1d(log_energy,
                                            np.log(self._att_coeff['compton']))
-        
+
+        self._total_loginterp = interp1d(log_energy,
+                                         np.log(self._att_coeff['compton'] +
+                                                self._att_coeff['pair'] +
+                                                self._att_coeff['photo']))
+
     @classmethod
     def from_name(cls, name):
 
@@ -56,6 +61,12 @@ class Material:
         log_energy = np.log(energy.to_value(self._energy_unit))
 
         return np.exp(self._compton_loginterp(log_energy))*self._coeff_unit
+
+    def total_attenuation(self, energy):
+
+        log_energy = np.log(energy.to_value(self._energy_unit))
+
+        return np.exp(self._total_loginterp(log_energy))*self._coeff_unit
 
     def plot_attenuation(self, ax = None):
 

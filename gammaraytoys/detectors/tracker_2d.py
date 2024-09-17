@@ -3,6 +3,8 @@ import numpy as np
 from gammaraytoys import Material
 from astropy import units as u
 from astropy.coordinates import CartesianRepresentation, Angle
+from .event import Interaction, Particle, Photon, Compton, Absorption, EventList    
+
 
 class ToyLayeredTracker2D:
 
@@ -93,79 +95,103 @@ class ToyLayeredTracker2D:
             
         return ax
 
-    def sim_event(self, position, direction, energy):
-
-        # Standarize inputs format
-        if not isinstance(position, CartesianRepresentation):
-
-            position = u.Quantity(position, ndmin = 2)
-
-            position_list = CartesianRepresentation(x = position[:,0],
-                                                    y = position[:,1],
-                                                    z = 0*u.cm)
-
-        nevents = position_list.size
-        position_list = np.broadcast_to(position_list, nevents)    
-        direction_list = np.broadcast_to(Angle(direction).wrap_at(360*u.deg),
-                                         nevents, subok=True)
-        energy_list = np.broadcast_to(energy, nevents, subok=True) 
-
-        # Sims
-        for position, direction, energy in zip(position_list, direction_list, energy_list):
-            """
-            Direction is photon direction. Wrt x axis, counter-clockwise
-            """
-
-            layer_idx = None # First iteration
-            
-            while True:
-
-                flying_up = direction < 180*u.deg
-                flying_right = direction < 90*u.deg or direction > 270*u.deg
-                
-                # Terminate horizontal events
-                if direction == 0*u.deg or direction == 180*u.deg:
-                    break
-
-                # Terminate events flying out of boundaries
-                if ((position.x >= self.right_bound and flying_right)
-                    or
-                    (position.x <= self.left_bound  and not flying_right)
-                    or
-                    (position.y >= self.top_bound and flying_up)
-                    or
-                    (position.y <= self.bottom_bound and not flying_up)):
-                    break
-
-                # Determine interaction
-                if layer_idx is None:
-                    # First iteration
-                    new_pos_x = position.x + (self.layer_positions - position.y)/np.tan(direction)
-
-                    crossed_tracker_idx = np.where((new_pos_x < self.right_bound) & (new_pos_x > self.left_bound))[0]
-                    y_dist_to_crosses = self.layer_positions[crossed_tracker_idx] - position.y
-                    
-                    if flying_up:
-                        layer_idx_crossed = np.argmin(y_dist_to_crosses)
-                    else:
-                        layer_idx_crossed = np.argmax(y_dist_to_crosses)
-
-                    layer_idx = crossed_tracker_idx[layer_idx_crossed]
-
-                    print(layer_idx)
-                else:
-                    if flying_up:
-                        layer_idx += 1
-                    else:
-                        layer_idx -= 1
-
-                # Temp. Remove
-                break
-
-
-
-
-
+    def sim_event(self, particle):
 
         
-  
+        while True:
+
+            flying_up = particle.direction < 180*u.deg
+            flying_down = not flying_up
+            flying_right = particle.direction < 90*u.deg or particle.direction > 270*u.deg
+            flying_left = not flying_right
+
+            # Terminate events flying out of boundaries
+            if ((particle.position.x >= self.right_bound and flying_right)
+                or
+                (particle.position.x <= self.left_bound  and flying_left)
+                or
+                (particle.position.y >= self.top_bound and flying_up)
+                or
+                (particle.position.y <= self.bottom_bound and flying_down)):
+                break
+
+            # Determine interaction layer
+            new_pos_x = particle.position.x + (self.layer_positions - particle.position.y)/np.tan(particle.direction)
+
+            # Check only the crosses within the detector, along the flying direction,
+            # and excluding the current layer (if the particle starts exactly at a layer)
+            y_dist_to_layers = self.layer_positions - particle.position.y
+            crossed_tracker_idx = np.where((new_pos_x < self.right_bound) &
+                                           (new_pos_x > self.left_bound) &
+                                           (y_dist_to_layers > 0 if flying_up else y_dist_to_layers < 0)
+                                           )[0]
+            
+            y_dist_to_crosses = y_dist_to_layers[crossed_tracker_idx] * (-1 if flying_down else 1)
+
+            if y_dist_to_crosses.size == 0:
+                # No interactions, flew in between layers
+                break
+            
+            layer_idx_crossed = np.argmin(y_dist_to_crosses)
+            
+            layer_idx = crossed_tracker_idx[layer_idx_crossed]
+
+            print(layer_idx)
+
+            # Determine if it interacted based on the total attenuation coefficient
+            total_attenuation_coeff = self.material.total_attenuation(particle.energy)
+            interaction_prob = np.exp(-self.mass_thickness[layer_idx] * total_attenuation_coeff)
+
+            if np.random.uniform() > interaction_prob:
+                # Didn't interact
+                break
+
+            # Determined which interaction type we have. Only Compton or total absorption for now.
+            # If pair and compton, we assume that the e- and e+ are fully absorbed.
+            compton_attenuation_coeff = self.material.compton_attenuation(particle.energy)
+
+        #     if np.random.uniform() < compton_attenuation_coeff / total_attenuation_coeff:
+        #         # Compton.
+
+        #         # Get random direction
+                
+                
+        #         # Derive the deposited energy from kinematics
+
+        #         # Add measurement errors to position and energy
+                
+        #         # Add interaction to tree
+        #         compton = particle.set_interaction(Compton(layer = layer_idx,
+        #                                                    position = ,
+        #                                                    energy = ))
+
+        #         photon.add_parent(particle)
+                
+        #         # Add child particles (no electron, assumed fully absorbed for now)
+        #         photon = Photon
+
+        #         photon.add_parent(compton)
+
+        #         # Continue simulation, iterative
+        #         self.sim_event(photon)
+                
+        #     else:
+        #         # Full absorption
+
+        #         # Add measurement errors to position and energy
+
+        #         # Add interaction to tree
+        #         absorption = Absorption
+
+        #         absorption.add_parent(particle)
+
+        #         # Terminate
+        #         break
+
+        # return particle
+
+
+
+
+
+
