@@ -1,145 +1,176 @@
 import numpy as np
+from astropy.coordinates import CartesianRepresentation
+from astropy import units as u
+import yaml
 
 class EventList:
 
     def __init__(self):
         
         self._events = []
-        self._nsim = 0
+        self.nsim = None
+        self.sim_time = None
 
-    @property
-    def nsim(self):
-        return self._nsim
-
-    def appedd(self, event):
+    def __getitem__(self, key):
+        return self._events[key]
+    
+    def append(self, event):
         self._events.append(event)
 
     def write(self, filename):
-
         """
+        
         """
 
-class Event:
-
-    def __init__(self, event_type, **data):
-
-        self._data = {'event_type': event_type, 'data':data, 'children': []}
-
-    @property
-    def event_type(self):
-        return self._data['event_type']
+        with open(filename, 'w') as f:
+            yaml.dump(dict(nsim = self.nsim,
+                           sim_time = self.sim_time,
+                           events = [{'nevent':n} | e.to_dict() for n,e in enumerate(self._events)]),
+                      f, sort_keys=False)
         
-    @property
-    def children(self):
-        return self._data['children']
+class Particle:
 
-    @property
-    def data(self):
-        return self._data['data']
+    def __init__(self, particle_type, position, direction, energy):
 
-    def __getitem__(self, key):
-        if isinstance(key, (int, np.int)):
-            return self.children[key]
-        else:
-            return self._data.data[key]
-    
-    def add_child(self, child):
+        self.particle_type = particle_type
+        self.position = position
+        self.direction = direction
+        self.energy = energy
+        self.interaction = None
+        self.reco = None
+
+    def to_dict(self):
         
-        self.children.append(child)
+        output = dict(particle_type = self.particle_type,
+                      pos_x = str(self.position.x),
+                      pos_y = str(self.position.y),
+                      direction = str(self.direction),
+                      energy = str(self.energy))
 
-    def add_parent(self, parent):
+        if self.reco is not None:
+            output['reco'] = self.reco.to_dict()
 
-        parent.add_child(self)
+        if self.interaction is not None:
+            output['interaction'] = self.interaction.to_dict()
 
+        return output
+        
+    class Reconstruction:
+
+        def __init__(self, event_type, direction, energy):
+
+            self.event_type = event_type
+            self.direction = direction
+            self.energy = energy
+
+        def to_dict(self):
+
+            output = dict(event_type = self.event_type,
+                          direction = str(self.direction),
+                          energy = str(self.energy))
+            
+            return output
+            
+        def __repr__(self):
+            return yaml.dump(self.to_dict(), sort_keys=False)
+
+    def set_interaction(self, interaction):
+        self.interaction = interaction
         return self
 
-    def as_yaml(self, index = 0, indent = 0, in_list = True):
+    def add_parent(self, interaction):
+        interaction.add_child(self)
+        return self
         
-        if in_list:
-            string = ' '*(indent) + "- "
-            indent += 2
-        else:
-            string = ' '*indent 
+    def set_reco(self, event_type, direction, energy):
 
-        string += f"event_type: {self.event_type}\n"
+        self.reco = self.Reconstruction(event_type = event_type,
+                                        direction = direction,
+                                        energy = energy)
+
+    def __repr__(self):
+        return yaml.dump(self.to_dict(), sort_keys=False)
         
-        string += ' '*(indent) + f"nevent: {index}\n"
-        string += ' '*(indent) + f"data:\n"
+class Interaction:
+
+    def __init__(self, interaction_type, layer, position, energy):
+
+        self.interaction_type = interaction_type
+        self.layer = layer
+        self.position = position
+        self.energy = energy
+        self.children = []
         
-        for key,value in self.data.items():
-            string += ' '*(indent+2) + f"{key}: {value}\n"
+    def add_child(self, particle):
+        self.children.append(particle)
+        return self
 
-        string += ' '*(indent) + "children:\n"    
+    def add_parent(self, particle):
+        particle.set_interaction(self)
+        return self
+        
+    def to_dict(self):
+        
+        output = dict(interaction_type = self.interaction_type,
+                      layer = self.layer,
+                      pos_x = str(self.position.x),
+                      pos_y = str(self.position.y),
+                      energy = str(self.energy))
 
-        for n,child in enumerate(self.children):
-            string += child.as_yaml(index = n, indent = indent + 4, in_list = True)
+        if self.children:
+            output['children'] = [c.to_dict() for c in self.children]
 
-        return string
+        return output
     
     def __repr__(self):
-        return self.as_yaml()
-
-    
-class Particle(Event):
-
-    def __init__(self, particle_type, pos_x, pos_y, direction, energy, **data):
-
-        super().__init__(event_type = particle_type,
-                         pos_x = pos_x,
-                         pos_y = pos_y,
-                         direction = direction,
-                         energy = energy,
-                         **data)
-
-    def add_interaction(self, interaction):
-
-        super().add_child(interaction)
-
-class Interaction(Event):
-
-    def __init__(self, interation_type, layer, pos_x, pos_y, energy):
-
-        super().__init__(event_type = interation_type,
-                         layer = layer,
-                         pos_x = pos_x,
-                         pos_y = pos_y,
-                         energy = energy)
-
-    def add_child_particle(self, particle):
-
-        super().add_child(particle)        
+        return yaml.dump(self.to_dict(), sort_keys=False)
 
 class Absorption(Interaction):
 
-    def __init__(self, layer, pos_x, pos_y, energy):
+    def __init__(self, layer, position, energy, **data):
 
-        super().__init__(interation_type = 'absorption',
+        super().__init__(interaction_type = 'absorption',
                          layer = layer,
-                         pos_x = pos_x,
-                         pos_y = pos_y,
-                         energy = energy)
+                         position = position,
+                         energy = energy,
+                         **data)
 
 class Compton(Interaction):
 
-    def __init__(self, layer, pos_x, pos_y, energy):
+    def __init__(self, layer, position, energy, **data):
 
-        super().__init__(interation_type = 'compton',
+        super().__init__(interaction_type = 'compton',
                          layer = layer,
-                         pos_x = pos_x,
-                         pos_y = pos_y,
-                         energy = energy)
+                         position = position,
+                         energy = energy,
+                         **data)
         
         
 class Photon(Particle):
 
-    def __init__(self, pos_x, pos_y, direction, energy, chirality = .5):
+    def __init__(self, position, direction, energy, chirality = .5, **data):
 
         super().__init__(particle_type = 'photon',
-                         pos_x = pos_x,
-                         pos_y = pos_y,
+                         position = position,
                          direction = direction,
                          energy = energy,
-                         chirality = chirality)
+                         **data)
+        
+        self.chirality = chirality
 
-    
-    
+    def to_dict(self):
+
+        output = dict(particle_type = self.particle_type,
+                      pos_x = str(self.position.x),
+                      pos_y = str(self.position.y),
+                      direction = str(self.direction),
+                      energy = str(self.energy),
+                      chirality = self.chirality)
+
+        if self.reco is not None:
+            output['reco'] = self.reco.to_dict()
+
+        if self.interaction is not None:
+            output['interaction'] = self.interaction.to_dict()
+
+        return output    

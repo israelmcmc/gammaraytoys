@@ -1,4 +1,4 @@
 from .materials import Material
 from .detectors import ToyCodedMaskDetector2D, ToyLayeredTracker2D
 from .analysis import poisson_binned_log_likelihood, unbinned_log_likelihood, richardson_lucy
-from .detectors import Event, Interaction, Particle, Photon, Compton, Absorption
+from .detectors import Interaction, Particle, Photon, Compton, Absorption, EventList
