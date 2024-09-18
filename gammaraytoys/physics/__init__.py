@@ -1,2 +1,2 @@
-from .compton import KleinNishina2D
+from .compton import ComptonPhysics2D
 

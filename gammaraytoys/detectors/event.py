@@ -2,6 +2,7 @@ import numpy as np
 from astropy.coordinates import CartesianRepresentation, Angle
 from astropy import units as u
 import yaml
+from gammaraytoys.coordinates import Cartesian2D
 
 class EventList:
 
@@ -91,15 +92,59 @@ class Particle:
     def __repr__(self):
         return yaml.dump(self.to_dict(), sort_keys=False)
         
+    def plot(self, ax, length_unit, **kwargs):
+
+        if self.interaction is not None:
+            end_pos = self.interaction.position
+        else:
+            end_pos = Cartesian2D(self.position.x + 1*u.m*np.cos(self.direction),
+                                  self.position.y + 1*u.m*np.sin(self.direction))
+                                  
+        ax.plot([self.position.x.to_value(length_unit),
+                 end_pos.x.to_value(length_unit)],
+                [self.position.y.to_value(length_unit),
+                 end_pos.y.to_value(length_unit)])
+
+        if self.interaction is not None:
+            self.interaction.plot(ax, length_unit)
+
+        return ax
+
 class Interaction:
 
-    def __init__(self, interaction_type, layer, position, energy):
+    def __init__(self, interaction_type, position, energy):
 
         self.interaction_type = interaction_type
-        self.layer = layer
         self.position = position
         self.energy = energy
+        self.measurement = None
         self.children = []
+
+    class Measurement:
+
+        def __init__(self, layer, position, energy):
+
+            self.layer = layer
+            self.position = position
+            self.energy = energy
+
+        def to_dict(self):
+
+            output = dict(layer = self.layer,
+                          pos_x = str(self.position.x),
+                          pos_y = str(self.position.y),
+                          energy = str(self.energy))
+            
+            return output
+            
+        def __repr__(self):
+            return yaml.dump(self.to_dict(), sort_keys=False)
+
+    def set_measurement(self, layer, position, energy):
+
+        self.measurement = self.Measurement(layer = layer,
+                                            position = position,
+                                            energy = energy)
         
     def add_child(self, particle):
         self.children.append(particle)
@@ -112,10 +157,12 @@ class Interaction:
     def to_dict(self):
         
         output = dict(interaction_type = self.interaction_type,
-                      layer = self.layer,
                       pos_x = str(self.position.x),
                       pos_y = str(self.position.y),
                       energy = str(self.energy))
+
+        if self.measurement is not None:
+            output['measurement'] = self.measurement.to_dict()
 
         if self.children:
             output['children'] = [c.to_dict() for c in self.children]
@@ -125,27 +172,34 @@ class Interaction:
     def __repr__(self):
         return yaml.dump(self.to_dict(), sort_keys=False)
 
+    def plot(self, ax, length_unit):
+
+        ax.scatter([self.position.x.to_value(length_unit)],
+                   [self.position.y.to_value(length_unit)])
+
+        for child in self.children:
+            child.plot(ax, length_unit)
+
+        return ax
+    
 class Absorption(Interaction):
 
-    def __init__(self, layer, position, energy, **data):
+    def __init__(self, position, energy, **data):
 
         super().__init__(interaction_type = 'absorption',
-                         layer = layer,
                          position = position,
                          energy = energy,
                          **data)
 
 class Compton(Interaction):
 
-    def __init__(self, layer, position, energy, **data):
+    def __init__(self, position, energy, **data):
 
         super().__init__(interaction_type = 'compton',
-                         layer = layer,
                          position = position,
                          energy = energy,
                          **data)
-        
-        
+    
 class Photon(Particle):
 
     def __init__(self, position, direction, energy, chirality = .5, **data):
