@@ -1,3 +1,5 @@
+import numpy as np
+
 def poisson_binned_log_likelihood(data, expectation):
 
     # Same as this 

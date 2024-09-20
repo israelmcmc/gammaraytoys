@@ -5,6 +5,7 @@ from astropy.coordinates import Angle
 from astropy.units import Quantity
 from scipy.stats import poisson
 from histpy import Histogram, Axis
+from scipy.stats import poisson, norm
 
 class ToyCodedMaskDetector2D:
 
@@ -30,7 +31,27 @@ class ToyCodedMaskDetector2D:
     @property
     def mask_separation(self):
         return self._mask_sep
+
+    @property
+    def angular_resolution(self):
+        return np.arctan(np.min(self.mask.axis.widths)/self.mask_separation)*u.rad
+
+    @property
+    def mask_size(self):
+        return self.mask.axis.hi_lim - self.mask.axis.lo_lim
+
+    @property
+    def detector_size(self):
+        return self.detector_axis.hi_lim - self.detector_axis.lo_lim
     
+    @property
+    def fully_coded_fov(self):
+        return np.arctan((self.mask_size/2-self.detector_size/2)/self.mask_separation)*u.rad
+    
+    @property
+    def partially_coded_fov(self):
+        return np.arctan((self.mask_size/2+self.detector_size/2)/self.mask_separation)*u.rad
+
     @classmethod
     def create_random_mask(cls, mask_size, mask_npix, mask_separation, open_fraction, detector_size, detector_npix, detector_efficiency):
 
@@ -150,3 +171,27 @@ class ToyCodedMaskDetector2D:
 
         return expectation
             
+    def gaussian_model(self, flux, loc, width, partially_coded = False):
+
+        #Prevent numerical error
+        width = np.maximum(self.angular_resolution/100, width) 
+        
+        if partially_coded:
+            fov = self.partially_coded_fov
+        else:
+            fov = self.fully_coded_fov
+
+        # Factor 5 ang res, somewhat arbitrary
+        model = Histogram(np.arange(-fov.to_value(u.degree),
+                                    fov.to_value(u.degree),
+                                    self.angular_resolution.to_value(u.degree)/5) * u.degree)
+
+        norm_cdf = norm.cdf(model.axis.edges.to_value(u.rad),
+                            loc = loc.to_value(u.rad),
+                            scale = width.to_value(u.rad))
+        model[:] = norm_cdf[1:] - norm_cdf[:-1]
+
+        model *= flux / np.sum(model)
+
+        return model
+    

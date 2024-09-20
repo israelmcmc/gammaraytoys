@@ -107,7 +107,7 @@ class ToyLayeredTracker2D:
         # initial injection position
         position = copy(particle.position)
 
-        
+        nhits = 0
         
         while True:
             
@@ -162,6 +162,8 @@ class ToyLayeredTracker2D:
                 position = new_pos
                 continue
 
+            nhits += 1
+            
             # Add measurement error to position
             pos_res = self.position_resolution[layer_idx]
             measured_x = norm.rvs(new_pos_x.to_value(pos_res.unit),
@@ -209,7 +211,9 @@ class ToyLayeredTracker2D:
                 photon.add_parent(compton)
 
                 # Continue simulation, iterative
-                self.sim_event(photon)
+                child, nhits_child = self.sim_event(photon)
+
+                nhits += nhits_child
 
             else:
                 # Full absorption
@@ -231,7 +235,7 @@ class ToyLayeredTracker2D:
             # Terminate
             break
 
-        return particle
+        return particle, nhits
 
 
 
