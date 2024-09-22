@@ -24,7 +24,13 @@ def richardson_lucy(data, model, response, response_norm = None, niter = 1):
         # nansum skips cases where both data and expectation are 0
         coeff = np.nansum( (data/expectation)[:,None] * response, axis = 0)  
 
-        model *= coeff / response_norm
+        # Similar here. Handle response_norm = 0 (e.g. zero exposure, non-physical)
+        norm_coeff = np.zeros_like(coeff)
+        np.divide(coeff, response_norm,
+                  out = norm_coeff,
+                  where = (coeff!=0) | (response_norm != 0))
+        
+        model *= norm_coeff
 
     return model
 
