@@ -15,7 +15,56 @@ class ToyCodedMaskDetector2D:
         self._det_axis = detector_axis
         self._mask = mask
         self._det_eff = detector_efficiency
+        self._sky_axis = None
+        self._response = None
 
+
+    @property
+    def sky_axis(self):
+
+        if self._response is None:
+            # Compute and cache
+
+            fov = self.partially_coded_fov
+
+            self._sky_axis =  Axis(np.arange(-fov.to_value(u.degree),
+                                             fov.to_value(u.degree),
+                                             self.angular_resolution.to_value(u.degree)/5) * u.degree,
+                                   label = 'off_axis_angle')
+
+        return self._sky_axis
+            
+    @property
+    def response(self):
+        if self._response is None:
+            # Compute and cache
+
+            flux = 1/u.cm/u.s
+            duration = 1*u.s
+            
+            response = Histogram.concatenate(self.sky_axis,
+                                             [self.point_source_response(flux = flux,
+                                                                         angle = a,
+                                                                         duration = duration,
+                                                                         fluctuate = False)
+                                              for a in self.sky_axis.centers])
+            
+            response = response.project(1,0) # Transpose
+
+            # Give correct area units
+            response = Histogram(response.axes, response.contents/flux/duration)
+
+            self._response = response
+                            
+        return self._response
+
+    def effective_area(self, angle):
+
+        if np.abs(angle > self.fully_coded_fov):
+            return 0*u.cm
+        
+        return np.sum(self.response[:, self.sky_axis.find_bin(angle)])
+    
     @property
     def mask(self):
         return self._mask
@@ -34,7 +83,7 @@ class ToyCodedMaskDetector2D:
 
     @property
     def angular_resolution(self):
-        return np.arctan(np.min(self.mask.axis.widths)/self.mask_separation)*u.rad
+        return np.arctan(np.min(self.mask.axis.widths)/self.mask_separation)
 
     @property
     def mask_size(self):
@@ -46,16 +95,18 @@ class ToyCodedMaskDetector2D:
     
     @property
     def fully_coded_fov(self):
-        return np.arctan((self.mask_size/2-self.detector_size/2)/self.mask_separation)*u.rad
+        return np.arctan((self.mask_size/2-self.detector_size/2)/self.mask_separation)
     
     @property
     def partially_coded_fov(self):
-        return np.arctan((self.mask_size/2+self.detector_size/2)/self.mask_separation)*u.rad
+        return np.arctan((self.mask_size/2+self.detector_size/2)/self.mask_separation)
 
     @classmethod
+    @u.quantity_input(mask_size = u.m, mask_separation = u.m, detector_size = u.m)
     def create_random_mask(cls, mask_size, mask_npix, mask_separation, open_fraction, detector_size, detector_npix, detector_efficiency):
 
-        return cls(detector_axis = Axis(np.linspace(-detector_size/2, detector_size/2, detector_npix+1)), 
+        return cls(detector_axis = Axis(np.linspace(-detector_size/2, detector_size/2, detector_npix+1),
+                                        label = 'detector_axis'), 
                    mask = Histogram(np.linspace(-mask_size/2, mask_size/2, mask_npix+1),
                                     (np.random.uniform(size = mask_npix) < open_fraction).astype(int)), 
                    mask_separation = mask_separation, 
@@ -66,58 +117,69 @@ class ToyCodedMaskDetector2D:
         if ax is None:
             fig,ax = plt.subplots()
 
-        ax.errorbar(self._det_axis.centers, -.05*np.ones(self._det_axis.nbins), 
-                    xerr = self._det_axis.widths/2, 
+        length_unit = self.detector_axis.unit
+
+        ax.errorbar(self._det_axis.centers.to_value(),
+                    -.05*np.ones(self._det_axis.nbins), 
+                    xerr = self._det_axis.widths.to_value(length_unit)/2, 
                     capsize = 2,
                     color = 'red', alpha = .2)
 
         # Mask
-        for lo,hi,open in zip(self._mask.axis.lower_bounds, self._mask.axis.upper_bounds, self._mask.contents):
+        for lo,hi,open in zip(self._mask.axis.lower_bounds.to_value(length_unit),
+                              self._mask.axis.upper_bounds.to_value(length_unit),
+                              self._mask.contents):
             if not open:
                 ax.plot([lo, hi],
-                        [self._mask_sep, self._mask_sep],
+                        [self.mask_separation.to_value(length_unit), self.mask_separation.to_value(length_unit)],
                        color = 'black')
 
         # Tube
-        ax.plot([self._mask.axis.lo_lim, self._mask.axis.lo_lim],[-.2, self._mask_sep],
+        ax.plot([self._mask.axis.lo_lim.to_value(length_unit),
+                 self._mask.axis.lo_lim.to_value(length_unit)],
+                [-.2, self.mask_separation.to_value(length_unit)],
                 color = 'black')
-        ax.plot([self._mask.axis.hi_lim, self._mask.axis.hi_lim],[-.2, self._mask_sep],
+        ax.plot([self._mask.axis.hi_lim.to_value(length_unit),
+                 self._mask.axis.hi_lim.to_value(length_unit)],
+                [-.2, self.mask_separation.to_value(length_unit)],
                 color = 'black')
-        ax.plot([self._mask.axis.lo_lim,self._mask.axis.hi_lim],[-.2,-.2], color = 'black')
+        ax.plot([self._mask.axis.lo_lim.to_value(length_unit),
+                 self._mask.axis.hi_lim.to_value(length_unit)],[-.2,-.2], color = 'black')
 
         if data is not None:
             axr = ax.twinx()
 
             data.plot(axr)
 
-            axr.set_ylim(-2*np.maximum(1, np.max(data))*.5/(self._mask_sep + .5), 2*np.maximum(1,np.max(data)))
+            axr.set_ylim(-2*np.maximum(1, np.max(data))*.5/(self.mask_separation.to_value(length_unit) + .5), 2*np.maximum(1,np.max(data)))
 
             axr.set_ylabel("Expected counts")
         
         if angle is not None:
-            ax.plot(self._mask.axis.lo_lim - np.array([self._mask_sep * np.tan(angle), 0]),
-                                                      [0, self._mask_sep], 
+            ax.plot(self._mask.axis.lo_lim.to_value(length_unit) - np.array([self.mask_separation.to_value(length_unit) * np.tan(angle), 0]),
+                                                      [0, self.mask_separation.to_value(length_unit)], 
                     color = 'grey', ls = ':')
-            ax.plot(self._mask.axis.hi_lim - np.array([self._mask_sep * np.tan(angle), 0]),
-                                                      [0, self._mask_sep],
+            ax.plot(self._mask.axis.hi_lim.to_value(length_unit) - np.array([self.mask_separation.to_value(length_unit) * np.tan(angle), 0]),
+                                                      [0, self.mask_separation.to_value(length_unit)],
                     color = 'grey', ls = ':')
 
-            ax.plot(self._det_axis.lo_lim + np.array([0, self._mask_sep * np.tan(angle)]),
-                                                      [0, self._mask_sep], 
+            ax.plot(self._det_axis.lo_lim.to_value(length_unit) + np.array([0, self.mask_separation.to_value(length_unit) * np.tan(angle)]),
+                                                      [0, self.mask_separation.to_value(length_unit)], 
                     color = 'red', ls = ':', alpha = .3)
-            ax.plot(self._det_axis.hi_lim + np.array([0, self._mask_sep * np.tan(angle)]),
-                                                      [0, self._mask_sep],
+            ax.plot(self._det_axis.hi_lim.to_value(length_unit) + np.array([0, self.mask_separation.to_value(length_unit) * np.tan(angle)]),
+                                                      [0, self.mask_separation.to_value(length_unit)],
                     color = 'red', ls = ':', alpha = .3)
 
-        ax.set_ylim(-.5, self._mask_sep + .5)
-        ax.set_xlim(self._mask.axis.lo_lim*1.1, self._mask.axis.hi_lim*1.1)
+        ax.set_ylim(-.5, self.mask_separation.to_value(length_unit) + .5)
+        ax.set_xlim(self._mask.axis.lo_lim.to_value(length_unit)*1.1, self._mask.axis.hi_lim.to_value(length_unit)*1.1)
 
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
+        ax.set_xlabel(f"x [{length_unit}]")
+        ax.set_ylabel(f"y [{length_unit}]")
         
         return ax
 
-    def point_source_response(self, flux, angle, fluctuate = False):
+    @u.quantity_input(flux = u.Unit()/u.m/u.s, duration = u.s, angle = u.rad)
+    def point_source_response(self, flux, duration, angle, fluctuate = False):
 
         if isinstance(angle, (Quantity, Angle)):
             angle = angle.to_value(u.rad)
@@ -126,7 +188,8 @@ class ToyCodedMaskDetector2D:
 
         mask_proj_idx = self._det_axis.find_bin(mask_proj_edges)
 
-        expectation = Histogram(self._det_axis)
+        # Will remove units when multiplying by flux and duration
+        expectation = Histogram(self._det_axis, unit = 1/flux.unit/duration.unit)
 
         for mask_bin,(det_bin_i,det_bin_f) in enumerate(zip(mask_proj_idx[:-1], mask_proj_idx[1:])):
 
@@ -152,46 +215,51 @@ class ToyCodedMaskDetector2D:
                 
             expectation[det_bin_f] += self.mask[mask_bin] * (mask_proj_edges[mask_bin+1] - lower_bound)
 
-        expectation *= flux * np.cos(angle) * self._det_eff
+        expectation *= flux * duration * np.cos(angle) * self._det_eff
 
         expectation.clear_underflow_and_overflow()
 
+        # Convert Quantity to np array  (it should be already unitless)
+        expectation = Histogram(expectation.axis, expectation.contents.to('').value)
+        
         if fluctuate:
             expectation[:] = poisson.rvs(mu = expectation.contents)
         
         return expectation
 
-    def convolve_model(self, model, fluctuate = True):
+    @u.quantity_input(model = u.Unit()/u.m/u.s, duration = u.s)
+    def convolve_model(self, model, duration, fluctuate = True):
 
-        expectation = Histogram(self._det_axis)
-
-        for angle, flux in zip(model.axis.centers, model.contents):
-
-            expectation += self.point_source_response(flux, angle, fluctuate)
+        expectation = duration*np.dot(self.response.contents, model.contents)
+        
+        expectation = Histogram(self._det_axis,
+                                contents = expectation.to('').value)
 
         return expectation
-            
-    def gaussian_model(self, flux, loc, width, partially_coded = False):
 
-        #Prevent numerical error
-        width = np.maximum(self.angular_resolution/100, width) 
+    @u.quantity_input(flux = u.Unit()/u.m/u.s, angle = u.rad, width = u.rad)
+    def gaussian_model(self, flux, angle, width):
+
+        #Prevent numerical error from point sources
+        width = np.maximum(self.angular_resolution/1e6, width) 
         
-        if partially_coded:
-            fov = self.partially_coded_fov
-        else:
-            fov = self.fully_coded_fov
-
         # Factor 5 ang res, somewhat arbitrary
-        model = Histogram(np.arange(-fov.to_value(u.degree),
-                                    fov.to_value(u.degree),
-                                    self.angular_resolution.to_value(u.degree)/5) * u.degree)
+        model = Histogram(self.sky_axis, unit = flux.unit)
 
         norm_cdf = norm.cdf(model.axis.edges.to_value(u.rad),
-                            loc = loc.to_value(u.rad),
+                            loc = angle.to_value(u.rad),
                             scale = width.to_value(u.rad))
-        model[:] = norm_cdf[1:] - norm_cdf[:-1]
-
-        model *= flux / np.sum(model)
+        model[:] = flux * (norm_cdf[1:] - norm_cdf[:-1])
 
         return model
-    
+
+    @u.quantity_input(rate = u.Hz, duration = u.s)
+    def uniform_bkg(self, rate, duration):
+
+        bkg = Histogram(self.detector_axis)
+
+        bkg[:] = bkg.axis.widths.value
+        
+        bkg *= (rate*duration).to('').value / np.sum(bkg)
+
+        return bkg
