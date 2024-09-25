@@ -9,7 +9,10 @@ from scipy.stats import poisson, norm
 
 class ToyCodedMaskDetector2D:
 
-    def __init__(self, detector_axis, mask, mask_separation, detector_efficiency):
+    def __init__(self, detector_axis, mask, mask_separation, detector_efficiency, shielding = 1):
+        """
+        Shielding = shield efficiency
+        """
         
         self._mask_sep = mask_separation
         self._det_axis = detector_axis
@@ -17,7 +20,7 @@ class ToyCodedMaskDetector2D:
         self._det_eff = detector_efficiency
         self._sky_axis = None
         self._response = None
-
+        self.shielding = shielding
 
     @property
     def sky_axis(self):
@@ -103,14 +106,15 @@ class ToyCodedMaskDetector2D:
 
     @classmethod
     @u.quantity_input(mask_size = u.m, mask_separation = u.m, detector_size = u.m)
-    def create_random_mask(cls, mask_size, mask_npix, mask_separation, open_fraction, detector_size, detector_npix, detector_efficiency):
+    def create_random_mask(cls, mask_size, mask_npix, mask_separation, open_fraction, detector_size, detector_npix, detector_efficiency, shielding = 1):
 
         return cls(detector_axis = Axis(np.linspace(-detector_size/2, detector_size/2, detector_npix+1),
                                         label = 'detector_axis'), 
                    mask = Histogram(np.linspace(-mask_size/2, mask_size/2, mask_npix+1),
                                     (np.random.uniform(size = mask_npix) < open_fraction).astype(int)), 
                    mask_separation = mask_separation, 
-                   detector_efficiency = detector_efficiency)
+                   detector_efficiency = detector_efficiency,
+                   shielding = shielding)
 
     def plot(self, ax = None, data = None, angle = None):
 
@@ -134,17 +138,21 @@ class ToyCodedMaskDetector2D:
                         [self.mask_separation.to_value(length_unit), self.mask_separation.to_value(length_unit)],
                        color = 'black')
 
-        # Tube
-        ax.plot([self._mask.axis.lo_lim.to_value(length_unit),
+        # Shield
+        if self.shielding != 1:
+            line_style = '--'
+        else:
+            line_style = '-'
+        ax.plot([self.detector_axis.lo_lim.to_value(length_unit),
                  self._mask.axis.lo_lim.to_value(length_unit)],
                 [-.2, self.mask_separation.to_value(length_unit)],
-                color = 'black')
-        ax.plot([self._mask.axis.hi_lim.to_value(length_unit),
+                color = 'black', ls = line_style)
+        ax.plot([self.detector_axis.hi_lim.to_value(length_unit),
                  self._mask.axis.hi_lim.to_value(length_unit)],
                 [-.2, self.mask_separation.to_value(length_unit)],
-                color = 'black')
-        ax.plot([self._mask.axis.lo_lim.to_value(length_unit),
-                 self._mask.axis.hi_lim.to_value(length_unit)],[-.2,-.2], color = 'black')
+                color = 'black', ls = line_style)
+        ax.plot([self.detector_axis.lo_lim.to_value(length_unit),
+                 self.detector_axis.hi_lim.to_value(length_unit)],[-.2,-.2], color = 'black')
 
         if data is not None:
             axr = ax.twinx()
@@ -215,6 +223,21 @@ class ToyCodedMaskDetector2D:
                 
             expectation[det_bin_f] += self.mask[mask_bin] * (mask_proj_edges[mask_bin+1] - lower_bound)
 
+        # Outside the coded mask
+        right_edge = self.mask.axis.hi_lim - np.tan(angle)*self.mask_separation
+        right_edge_bin = self.detector_axis.find_bin(right_edge)
+        if right_edge_bin < self.detector_axis.nbins:
+            expectation[right_edge_bin] = (1-self.shielding)*(self.detector_axis.upper_bounds[right_edge_bin] - right_edge)
+            expectation[right_edge_bin+1:] = (1-self.shielding)*self.detector_axis.widths[right_edge_bin+1:]
+
+        left_edge = self.mask.axis.lo_lim - np.tan(angle)*self.mask_separation
+        left_edge_bin = self.detector_axis.find_bin(left_edge)
+        if left_edge_bin >= 0:
+            expectation[left_edge_bin] = (1-self.shielding)*(left_edge - self.detector_axis.lower_bounds[left_edge_bin])
+            if left_edge_bin > 0:
+                expectation[:left_edge_bin-1] = (1-self.shielding)*self.detector_axis.widths[:left_edge_bin-1]
+
+        # Weight by exposure
         expectation *= flux * duration * np.cos(angle) * self._det_eff
 
         expectation.clear_underflow_and_overflow()
