@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 from gammaraytoys import Material
 from astropy import units as u
@@ -9,26 +10,40 @@ from gammaraytoys.coordinates import Cartesian2D
 from scipy.stats import norm
 from copy import copy, deepcopy
 
-class ToyLayeredTracker2D:
+class ToyTracker2D:
 
-    def __init__(self, size, layer_positions, material, layer_thickness, energy_resolution):
+    def __init__(self, material, layer_length, layer_positions, layer_thickness, energy_resolution, energy_threshold):
         """
         
         """
-
         
-        self._size = size
+        self._size = layer_length
 
         self._layer_pos = layer_positions
 
         self._material = Material.from_name(material)
 
-        layer_thickness = np.broadcast_to(layer_thickness, self.nlayers, subok=True)
+        self._layer_thickness = np.broadcast_to(layer_thickness, self.nlayers, subok=True)
 
-        self._mthick = layer_thickness * material.density
+        self._mthick = self._layer_thickness * self.material.density
         self._energy_res = np.broadcast_to(energy_resolution, self.nlayers)
-        self._pos_res = np.broadcast_to(position_resolution, self.nlayers, subok=True)
+        self._energy_thresh = np.broadcast_to(energy_threshold, self.nlayers, subok = True)
         
+        self._npix = (layer_length/self._layer_thickness).to_value('').astype(int)
+        self._pix_size = layer_length/self._npix
+
+        # Checks
+
+        # Overlaps
+        argsort_pos = np.argsort(layer_positions)
+        sort_layer_pos = layer_positions[argsort_pos]
+        sort_layer_thickness = self._layer_thickness[argsort_pos]
+
+        gaps  = ((sort_layer_pos[1:]  - sort_layer_thickness[1:]/2) -
+                 (sort_layer_pos[:-1] + sort_layer_thickness[:-1]/2))
+
+        if np.any(gaps < 0):
+            raise ValueError("Overlaps detected. Increase the space between layers or make them thinner.")
         
     @property
     def nlayers(self):
@@ -52,11 +67,15 @@ class ToyLayeredTracker2D:
 
     @property
     def position_resolution(self):
-        return self._pos_res
+        return self._pix_size
 
     @property
     def energy_resolution(self):
         return self._energy_res
+
+    @property
+    def energy_threshold(self):
+        return self._energy_thresh
 
     @property
     def left_bound(self):
@@ -84,13 +103,28 @@ class ToyLayeredTracker2D:
             fig,ax = plt.subplots()
 
         length_unit = u.cm
-            
-        for pos in self._layer_pos:
-            ax.plot([-self._size.to_value(length_unit)/2, self._size.to_value(length_unit)/2],
-                    [pos.to_value(length_unit), pos.to_value(length_unit)],
-                    color = 'black')
 
+        voxels = []
+        for pos,layer_thickness,npix, pix_size in zip(self._layer_pos, self._layer_thickness, self._npix, self._pix_size):
+            pos = pos.to_value(length_unit)
+            layer_thickness = layer_thickness.to_value(length_unit)
+            pix_size = pix_size.to_value(length_unit)
+            for i in range(npix): 
+                voxels.append(mpl.patches.Rectangle((-self.size.to_value(length_unit)/2 + i*pix_size, pos - layer_thickness/2),
+                                                      pix_size, layer_thickness,
+                                                     edgecolor = '.5',
+                                                    facecolor = '.9', lw = 1)
+                              )
+
+        ax.add_collection(mpl.collections.PatchCollection(voxels, match_original=True))
+                
         if event is not None:
+            ax.text(event.position.x.to_value(length_unit),
+                    event.position.y.to_value(length_unit),
+                    f"$\gamma(E = {event.energy:.1f}, k = {event.chirality})$")
+            hits = event.hits
+            ax.text(.03,.03,f"Nhits = {hits.nhits}\nMeasured energy = {np.sum(hits.energy):.2f}",
+                    transform=ax.transAxes)
             event.plot(ax, length_unit)
             
         ax.set_xlabel("x [cm]")
@@ -100,6 +134,8 @@ class ToyLayeredTracker2D:
                     2*self.right_bound.to_value(length_unit))
         ax.set_ylim((self.bottom_bound - self.height/2).to_value(length_unit),
                     (self.top_bound + self.height/2).to_value(length_unit))
+
+        ax.set_aspect('equal')
         
         return ax
 
@@ -163,13 +199,11 @@ class ToyLayeredTracker2D:
                 continue
 
             # Add measurement error to position
-            pos_res = self.position_resolution[layer_idx]
-            measured_x = norm.rvs(new_pos_x.to_value(pos_res.unit),
-                                      scale = pos_res.value)
-            measured_y = norm.rvs(new_pos_y.to_value(pos_res.unit),
-                                      scale = pos_res.value)
-            measured_pos = Cartesian2D(measured_x * pos_res.unit,
-                                       measured_y * pos_res.unit)
+            pix_size = self._pix_size[layer_idx]
+            measured_x = (np.floor(new_pos_x/pix_size) + 1/2)*pix_size
+            measured_y = new_pos_y
+            measured_pos = Cartesian2D(measured_x,
+                                       measured_y)
 
             # Determined which interaction type we have. Only Compton or total absorption for now.
             # If pair and compton, we assume that the e- and e+ are fully absorbed.
@@ -180,7 +214,7 @@ class ToyLayeredTracker2D:
                 compton_physics = ComptonPhysics2D(particle.energy)
                 
                 # Get random direction
-                scattering_angle = compton_physics.random_scattering_angle()
+                scattering_angle = compton_physics.random_scattering_angle(chirality = particle.chirality)
                 new_direction = particle.direction + scattering_angle
                 
                 # Derive the deposited energy from kinematics
@@ -191,22 +225,25 @@ class ToyLayeredTracker2D:
                 energy_res = self.energy_resolution[layer_idx] * deposited_energy.value
                 measured_energy = norm.rvs(deposited_energy.value,
                                            scale = energy_res)
+                measured_energy = np.maximum(0, measured_energy)
                 measured_energy *= deposited_energy.unit
                 
                 # Add interaction to tree
                 compton = Compton(position = new_pos,
                                   energy = deposited_energy)
 
-                compton.set_measurement(layer = layer_idx,
-                                        position = measured_pos,
-                                        energy = measured_energy)
-                
                 compton.add_parent(particle)
 
+                if deposited_energy > self.energy_threshold[layer_idx]:
+                    compton.set_measurement(layer = layer_idx,
+                                            position = measured_pos,
+                                            energy = measured_energy)
+                
                 # Add child particles (no electron, assumed fully absorbed for now)
                 photon = Photon(position = new_pos,
                                 direction = new_direction,
-                                energy = energy_out)
+                                energy = energy_out,
+                                chirality = particle.chirality)
 
                 photon.add_parent(compton)
 

@@ -8,6 +8,8 @@ from matplotlib import pyplot as plt
 class Material:
 
     def __init__(self, density, attenuation):
+
+        self.density = density
         
         self._att_coeff = attenuation
         self._energy_unit = attenuation.attrs['energy_unit']

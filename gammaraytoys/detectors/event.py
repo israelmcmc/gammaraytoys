@@ -161,8 +161,11 @@ class Particle:
     def __repr__(self):
         return yaml.dump(self.to_dict(), sort_keys=False)
         
-    def plot(self, ax, length_unit, **kwargs):
+    def plot(self, ax, length_unit, primary_energy = None, **kwargs):
 
+        if primary_energy is None:
+            primary_energy = self.energy
+        
         if self.interaction is not None:
             end_pos = self.interaction.position
         else:
@@ -172,10 +175,12 @@ class Particle:
         ax.plot([self.position.x.to_value(length_unit),
                  end_pos.x.to_value(length_unit)],
                 [self.position.y.to_value(length_unit),
-                 end_pos.y.to_value(length_unit)])
+                 end_pos.y.to_value(length_unit)],
+                color = 'red',
+                alpha = (self.energy/primary_energy).to_value(''))
 
         if self.interaction is not None:
-            self.interaction.plot(ax, length_unit)
+            self.interaction.plot(ax, length_unit, primary_energy)
 
         return ax
 
@@ -251,13 +256,16 @@ class Interaction:
     def __repr__(self):
         return yaml.dump(self.to_dict(), sort_keys=False)
 
-    def plot(self, ax, length_unit):
+    def plot(self, ax, length_unit, primary_energy = None, **kwargs):
 
-        ax.scatter([self.position.x.to_value(length_unit)],
-                   [self.position.y.to_value(length_unit)])
+        if self.measurement is not None:
+            ax.scatter([self.position.x.to_value(length_unit)],
+                       [self.position.y.to_value(length_unit)],
+                       color = 'red',
+                       s = 50*np.sqrt((self.energy/primary_energy).to_value('')))
 
         for child in self.children:
-            child.plot(ax, length_unit)
+            child.plot(ax, length_unit, primary_energy)
 
         return ax
     
@@ -281,15 +289,18 @@ class Compton(Interaction):
     
 class Photon(Particle):
 
-    def __init__(self, position, direction, energy, chirality = .5, **data):
+    def __init__(self, position, direction, energy, chirality = None, **data):
 
         super().__init__(particle_type = 'photon',
                          position = position,
                          direction = direction,
                          energy = energy,
                          **data)
-        
-        self.chirality = chirality
+
+        if chirality is None:
+            self.chirality = np.random.choice([1,-1])
+        else:
+            self.chirality = chirality
 
     def to_dict(self):
 

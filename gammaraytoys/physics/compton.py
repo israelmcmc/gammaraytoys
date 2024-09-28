@@ -38,9 +38,22 @@ class ComptonPhysics2D:
         return ((A * (epsilonCos + 1/epsilonCos - np.sin(phi)**2)) /
                 (np.pi * B * epsilonCos**2))
 
-    def random_scattering_angle(self, size = None):
+    def random_scattering_angle(self, size = None, chirality = None):
 
-        return self._rvs.rvs(size) * u.rad
+        phi = self._rvs.rvs(size) * u.rad
+
+        if chirality is not None:
+
+            mod_factor = self.modulation_factor(phi)
+
+            prob = 0.5 + mod_factor/2
+            
+            sign = np.random.choice(chirality*np.array([1,-1]),
+                                    p = [prob, 1-prob])
+
+            phi = sign*np.abs(phi)
+        
+        return phi
         
     def energy_out(self, phi):
 
