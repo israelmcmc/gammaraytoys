@@ -11,6 +11,5 @@ class Cartesian2D(CartesianRepresentation):
         return cls(c.x, c.y)
 
     def to_cartesian(self):
-        return CartesianRepresentation(x = c.x, y = c.y, z = 0*x)
-
+        return CartesianRepresentation(x = self.x, y = self.y, z = 0*self.x)
     

@@ -7,23 +7,26 @@ from matplotlib import pyplot as plt
 
 class Material:
 
-    def __init__(self, attenuation,
-                 energy_unit = u.MeV, coeff_unit = u.cm*u.cm/u.g):
+    def __init__(self, density, attenuation):
         
         self._att_coeff = attenuation
-        self._energy_unit = energy_unit
-        self._coeff_unit = coeff_unit
-
+        self._energy_unit = attenuation.attrs['energy_unit']
+        self._coeff_unit = attenuation.attrs['att_coeff_unit']
 
         self._att_energy = self._att_coeff['energy'].to_numpy() * self._energy_unit
-        
+
         log_energy = np.log(self._att_coeff['energy'])
         
         self._photo_loginterp = interp1d(log_energy,
                                          np.log(self._att_coeff['photo']))
-        
+
+        # Supress log(0) warning <511 
+        log_pair_att = -np.inf*np.ones(log_energy.size)
+        np.log(self._att_coeff['pair'].to_numpy(),
+               out = log_pair_att,
+               where = self._att_coeff['pair'].to_numpy() > 0)
         self._pair_loginterp = interp1d(log_energy,
-                                         np.log(self._att_coeff['pair']))
+                                        log_pair_att)
         
         self._compton_loginterp = interp1d(log_energy,
                                            np.log(self._att_coeff['compton']))
@@ -41,8 +44,17 @@ class Material:
         
         this_file_path = Path(__file__).parent.resolve()
 
-        return cls(pd.read_csv(this_file_path/f"data/attenuation_coefficients/{name}.txt",
-                    sep = '\s+', header = 0, comment = '#'))
+        density = pd.read_csv(this_file_path/"data/density.txt",  
+                              index_col = 0, sep = '\s+', header = 0,
+                              comment = '#').loc[name].density * u.g/u.cm/u.cm/u.cm
+
+        att = pd.read_csv(this_file_path/f"data/attenuation_coefficients/{name}.txt",
+                          sep = '\s+', header = 0, comment = '#')
+
+        att.attrs['energy_unit'] = u.MeV
+        att.attrs['att_coeff_unit'] = u.cm*u.cm/u.g
+        
+        return cls(density, att)
 
     def photo_attenuation(self, energy):
 

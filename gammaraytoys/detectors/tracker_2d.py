@@ -11,27 +11,24 @@ from copy import copy, deepcopy
 
 class ToyLayeredTracker2D:
 
-    def __init__(self, size, layer_positions, mass_thickness, energy_resolution,  position_resolution, material = 'Ge'):
+    def __init__(self, size, layer_positions, material, layer_thickness, energy_resolution):
         """
         
         """
 
+        
         self._size = size
-        self._area = size*size
 
         self._layer_pos = layer_positions
-        self._mthick = np.broadcast_to(mass_thickness, self.nlayers, subok=True)
+
+        self._material = Material.from_name(material)
+
+        layer_thickness = np.broadcast_to(layer_thickness, self.nlayers, subok=True)
+
+        self._mthick = layer_thickness * material.density
         self._energy_res = np.broadcast_to(energy_resolution, self.nlayers)
         self._pos_res = np.broadcast_to(position_resolution, self.nlayers, subok=True)
-
-        #Sort layers
-        asort = np.argsort(self._layer_pos)
-        self._layer_pos = self._layer_pos[asort]
-        self._mthick = self._mthick[asort]
-        self._energy_res = self._energy_res[asort]
-        self._pos_res = self._pos_res[asort]
         
-        self._material = Material.from_name(material)
         
     @property
     def nlayers(self):
@@ -41,10 +38,6 @@ class ToyLayeredTracker2D:
     def size(self):
         return self._size
     
-    @property
-    def instrumented_area(self):
-        return self.size*self.size
-
     @property
     def material(self):
         return self._material
@@ -75,11 +68,15 @@ class ToyLayeredTracker2D:
 
     @property
     def top_bound(self):
-        return self.layer_positions[-1]
+        return np.max(self.layer_positions)
     
     @property
     def bottom_bound(self):
-        return self.layer_positions[0]
+        return np.min(self.layer_positions)
+
+    @property
+    def height(self):
+        return self.top_bound - self.bottom_bound
     
     def plot(self, ax = None, event = None):
 
@@ -98,17 +95,20 @@ class ToyLayeredTracker2D:
             
         ax.set_xlabel("x [cm]")
         ax.set_ylabel("y [cm]")
-            
+
+        ax.set_xlim(2*self.left_bound.to_value(length_unit),
+                    2*self.right_bound.to_value(length_unit))
+        ax.set_ylim((self.bottom_bound - self.height/2).to_value(length_unit),
+                    (self.top_bound + self.height/2).to_value(length_unit))
+        
         return ax
 
-    def sim_event(self, particle):
+    def simulate_event(self, particle):
 
         # We need to copy position since we need to keep track where it is, but we don't want to change the
         # initial injection position
         position = copy(particle.position)
 
-        nhits = 0
-        
         while True:
             
             flying_up = particle.direction < 180*u.deg
@@ -162,8 +162,6 @@ class ToyLayeredTracker2D:
                 position = new_pos
                 continue
 
-            nhits += 1
-            
             # Add measurement error to position
             pos_res = self.position_resolution[layer_idx]
             measured_x = norm.rvs(new_pos_x.to_value(pos_res.unit),
@@ -190,8 +188,10 @@ class ToyLayeredTracker2D:
                 deposited_energy = particle.energy - energy_out
 
                 # Add measurement errors energy
-                measured_energy = norm.rvs(deposited_energy,
-                                           scale = self.energy_resolution[layer_idx] * deposited_energy)
+                energy_res = self.energy_resolution[layer_idx] * deposited_energy.value
+                measured_energy = norm.rvs(deposited_energy.value,
+                                           scale = energy_res)
+                measured_energy *= deposited_energy.unit
                 
                 # Add interaction to tree
                 compton = Compton(position = new_pos,
@@ -211,9 +211,7 @@ class ToyLayeredTracker2D:
                 photon.add_parent(compton)
 
                 # Continue simulation, iterative
-                child, nhits_child = self.sim_event(photon)
-
-                nhits += nhits_child
+                child = self.simulate_event(photon)
 
             else:
                 # Full absorption
@@ -225,8 +223,9 @@ class ToyLayeredTracker2D:
                 absorption.add_parent(particle)
 
                 # Add measurement errors energy
-                measured_energy = norm.rvs(particle.energy,
-                                           scale = self.energy_resolution[layer_idx] * particle.energy)
+                measured_energy = norm.rvs(particle.energy.value,
+                                           scale = self.energy_resolution[layer_idx] * particle.energy.value)
+                measured_energy *= particle.energy.unit
             
                 absorption.set_measurement(layer = layer_idx,
                                            position = measured_pos,
@@ -235,7 +234,7 @@ class ToyLayeredTracker2D:
             # Terminate
             break
 
-        return particle, nhits
+        return particle
 
 
 
