@@ -171,16 +171,18 @@ class Particle:
         else:
             end_pos = Cartesian2D(self.position.x + 1*u.km*np.cos(self.direction),
                                   self.position.y + 1*u.km*np.sin(self.direction))
-                                  
-        ax.plot([self.position.x.to_value(length_unit),
-                 end_pos.x.to_value(length_unit)],
-                [self.position.y.to_value(length_unit),
-                 end_pos.y.to_value(length_unit)],
-                color = 'red',
-                alpha = (self.energy/primary_energy).to_value(''))
+
+        draw_track = kwargs.get('draw_track', True)
+        if draw_track:
+            ax.plot([self.position.x.to_value(length_unit),
+                     end_pos.x.to_value(length_unit)],
+                    [self.position.y.to_value(length_unit),
+                     end_pos.y.to_value(length_unit)],
+                    color = 'red',
+                    alpha = (self.energy/primary_energy).to_value(''))
 
         if self.interaction is not None:
-            self.interaction.plot(ax, length_unit, primary_energy)
+            self.interaction.plot(ax, length_unit, primary_energy, **kwargs)
 
         return ax
 
@@ -265,7 +267,7 @@ class Interaction:
                        s = 50*np.sqrt((self.energy/primary_energy).to_value('')))
 
         for child in self.children:
-            child.plot(ax, length_unit, primary_energy)
+            child.plot(ax, length_unit, primary_energy, **kwargs)
 
         return ax
     
@@ -309,7 +311,7 @@ class Photon(Particle):
                       pos_y = str(self.position.y),
                       direction = str(self.direction),
                       energy = str(self.energy),
-                      chirality = self.chirality)
+                      chirality = int(self.chirality))
 
         if self.reco is not None:
             output['reco'] = self.reco.to_dict()

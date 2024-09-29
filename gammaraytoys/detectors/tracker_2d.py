@@ -93,11 +93,22 @@ class ToyTracker2D:
     def bottom_bound(self):
         return np.min(self.layer_positions)
 
+    def surrounding_circle(self):
+        det_edges = Cartesian2D(u.Quantity([self.left_bound, self.right_bound, self.left_bound,    self.right_bound]),
+                                u.Quantity([self.top_bound,  self.top_bound,   self.bottom_bound,  self.bottom_bound]))
+
+        det_center = np.mean(det_edges)
+
+        radius = np.sqrt(np.max(np.sum(np.pow(det_center.xyz[:,None] - det_edges.xyz, 2), axis = 0)))
+
+        return det_center, radius
+
+    
     @property
     def height(self):
         return self.top_bound - self.bottom_bound
     
-    def plot(self, ax = None, event = None):
+    def plot(self, ax = None, event = None, **kwargs):
 
         if ax is None:
             fig,ax = plt.subplots()
@@ -119,13 +130,12 @@ class ToyTracker2D:
         ax.add_collection(mpl.collections.PatchCollection(voxels, match_original=True))
                 
         if event is not None:
-            ax.text(event.position.x.to_value(length_unit),
-                    event.position.y.to_value(length_unit),
-                    f"$\gamma(E = {event.energy:.1f}, k = {event.chirality})$")
             hits = event.hits
+            ax.text(.03,.9,f"$\gamma(E = {event.energy:.1f}, k = {event.chirality})$",
+                    transform=ax.transAxes)
             ax.text(.03,.03,f"Nhits = {hits.nhits}\nMeasured energy = {np.sum(hits.energy):.2f}",
                     transform=ax.transAxes)
-            event.plot(ax, length_unit)
+            event.plot(ax, length_unit, **kwargs)
             
         ax.set_xlabel("x [cm]")
         ax.set_ylabel("y [cm]")
