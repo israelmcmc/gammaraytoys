@@ -1,8 +1,11 @@
 import astropy.units as u
+import astropy.constants as c
 import numpy as np
 from scipy.stats.sampling import SimpleRatioUniforms
 from histpy import Histogram,Axis
 import matplotlib.pyplot as plt
+
+_electron_mass = (c.m_e * c.c * c.c).to(u.keV)
 
 class ComptonPhysics2D:
     """
@@ -14,7 +17,7 @@ class ComptonPhysics2D:
     def __init__(self, energy):
 
         self.energy = energy
-        self.epsilon = (energy/(0.51099895069*u.MeV)).to_value('')
+        self.epsilon = (energy/_electron_mass).to_value('')
 
         class AuxPDFScatteringAngle:
             pdf = lambda phi: self._scattering_angle_pdf(phi)
@@ -61,7 +64,7 @@ class ComptonPhysics2D:
     
     def scattering_angle(self, energy_out):
 
-        return np.arccos(1 - (self.energy/energy_out - 1)/self.epsilon)
+        return np.arccos(1 + _electron_mass*(1/self.energy - 1/energy_out))
         
     def plot_scattering_angle_pdf(self, ax = None, **kwargs):
 

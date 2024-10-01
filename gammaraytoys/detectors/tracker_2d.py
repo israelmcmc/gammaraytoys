@@ -32,6 +32,13 @@ class ToyTracker2D:
         self._npix = (layer_length/self._layer_thickness).to_value('').astype(int)
         self._pix_size = layer_length/self._npix
 
+        det_edges = Cartesian2D(u.Quantity([self.left_bound, self.right_bound, self.left_bound,    self.right_bound]),
+                                u.Quantity([self.top_bound,  self.top_bound,   self.bottom_bound,  self.bottom_bound]))
+        
+        self._det_center = np.mean(det_edges)
+        
+        self._surr_radius = np.sqrt(np.max(np.sum(np.pow(self._det_center.xyz[:,None] - det_edges.xyz, 2), axis = 0)))
+        
         # Checks
 
         # Overlaps
@@ -93,22 +100,41 @@ class ToyTracker2D:
     def bottom_bound(self):
         return np.min(self.layer_positions)
 
-    def surrounding_circle(self):
-        det_edges = Cartesian2D(u.Quantity([self.left_bound, self.right_bound, self.left_bound,    self.right_bound]),
-                                u.Quantity([self.top_bound,  self.top_bound,   self.bottom_bound,  self.bottom_bound]))
+    @property
+    def surrounding_circle_radius(self):
+        return self._surr_radius
 
-        det_center = np.mean(det_edges)
+    @property
+    def surrounding_circle_center(self):
+        return self._det_center
+    
+    def throwing_plane(self, offaxis_angle):
 
-        radius = np.sqrt(np.max(np.sum(np.pow(det_center.xyz[:,None] - det_edges.xyz, 2), axis = 0)))
+        surr_center = self.surrounding_circle_center
+        surr_radius = self.surrounding_circle_radius
 
-        return det_center, radius
+        cart_angle = 90*u.deg - offaxis_angle
+        
+        norm_vector = Cartesian2D(surr_radius*np.cos(cart_angle),
+                                  surr_radius*np.sin(cart_angle))
 
+        plane_origin = Cartesian2D(surr_center.x + norm_vector.x,
+                                   surr_center.y + norm_vector.y)
+        
+        throw_parallel = Cartesian2D(-norm_vector.y,
+                                     norm_vector.x)
+
+        return plane_origin, throw_parallel
+
+    @property
+    def throwing_plane_size(self):
+        return 2*self.surrounding_circle_radius
     
     @property
     def height(self):
         return self.top_bound - self.bottom_bound
     
-    def plot(self, ax = None, event = None, **kwargs):
+    def plot(self, ax = None, event = None, draw_surrounding_circle = False, **kwargs):
 
         if ax is None:
             fig,ax = plt.subplots()
@@ -128,23 +154,41 @@ class ToyTracker2D:
                               )
 
         ax.add_collection(mpl.collections.PatchCollection(voxels, match_original=True))
+
+        surr_center = self.surrounding_circle_center
+        surr_radius = self.surrounding_circle_radius
+        
+        if draw_surrounding_circle:
+            theta_plot = np.linspace(0,2*np.pi)
+            x = (surr_center.x + surr_radius*np.cos(theta_plot)).to_value(length_unit)
+            y = (surr_center.y + surr_radius*np.sin(theta_plot)).to_value(length_unit)
+            ax.plot(x,y,ls = ':', color = 'black', alpha = .3)
+
+            if event is not None:
+                dist_plot = np.linspace(-1,1)
+
+                plane_origin, plane_parallel = self.throwing_plane(270*u.deg - event.direction)
+                x = (plane_origin.x + plane_parallel.x*dist_plot).to_value(length_unit)
+                y = (plane_origin.y + plane_parallel.y*dist_plot).to_value(length_unit)
+                ax.plot(x,y,ls = '--', color = 'black', alpha = .3)
                 
+
         if event is not None:
             hits = event.hits
-            ax.text(.03,.9,f"$\gamma(E = {event.energy:.1f}, k = {event.chirality})$",
+            ax.text(.03,.95,f"$\gamma(E = {event.energy:.1f}, k = {event.chirality})$",
                     transform=ax.transAxes)
             ax.text(.03,.03,f"Nhits = {hits.nhits}\nMeasured energy = {np.sum(hits.energy):.2f}",
                     transform=ax.transAxes)
             event.plot(ax, length_unit, **kwargs)
-            
+
         ax.set_xlabel("x [cm]")
         ax.set_ylabel("y [cm]")
 
-        ax.set_xlim(2*self.left_bound.to_value(length_unit),
-                    2*self.right_bound.to_value(length_unit))
-        ax.set_ylim((self.bottom_bound - self.height/2).to_value(length_unit),
-                    (self.top_bound + self.height/2).to_value(length_unit))
-
+        ax.set_xlim((surr_center.x - 1.5*surr_radius).to_value(length_unit),
+                    (surr_center.x + 1.5*surr_radius).to_value(length_unit))
+        ax.set_ylim((surr_center.y - 1.5*surr_radius).to_value(length_unit),
+                    (surr_center.y + 1.5*surr_radius).to_value(length_unit))
+ 
         ax.set_aspect('equal')
         
         return ax
@@ -172,6 +216,11 @@ class ToyTracker2D:
                 (position.y <= self.bottom_bound and flying_down)):
                 break
 
+            # Terminate horizontal particles
+            if particle.direction == 0*u.deg or particle.direction == 180*u.deg:
+                # No interactions, flew in between layers
+                break
+            
             # Determine interaction location
             new_pos_x = position.x + (self.layer_positions - position.y)/np.tan(particle.direction)
 
@@ -201,7 +250,7 @@ class ToyTracker2D:
 
             # Determine if it interacted based on the total attenuation coefficient
             total_attenuation_coeff = self.material.total_attenuation(particle.energy)
-            interaction_prob = np.exp(self.mass_thickness[layer_idx] * total_attenuation_coeff)
+            interaction_prob = np.exp(self.mass_thickness[layer_idx] * total_attenuation_coeff / np.abs(np.sin(particle.direction)))
 
             if np.random.uniform() > interaction_prob:
                 # Didn't interact. Continues flying
