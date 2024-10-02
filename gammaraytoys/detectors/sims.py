@@ -7,7 +7,8 @@ from .source import Source
 class Simulator:
 
     def __init__(self, detector, sources, reconstructor,
-                 duration = None, nsim = None, ntrig = None):
+                 duration = None, nsim = None, ntrig = None,
+                 doppler_broadening = True):
 
         self.detector = detector
 
@@ -55,6 +56,9 @@ class Simulator:
                                   labels = ["Em", "Phi", "Psi"],
                                 axis_scale = ['log','linear','linear'])
 
+        # Other
+        self.doppler_broadening = doppler_broadening
+        
     @property
     def nsources(self):
         return len(self.sources)
@@ -104,7 +108,8 @@ class Simulator:
             
             primary = source.random_photon(self.detector)
             
-            sim_event = self.detector.simulate_event(primary)
+            sim_event = self.detector.simulate_event(primary,
+                                                     doppler_broadening = self.doppler_broadening)
 
             reco_event = self.reconstructor.reconstruct(sim_event)
 

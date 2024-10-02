@@ -7,7 +7,7 @@ from astropy.coordinates import CartesianRepresentation, Angle
 from .event import Interaction, Particle, Photon, Compton, Absorption, EventList    
 from gammaraytoys.physics import ComptonPhysics2D
 from gammaraytoys.coordinates import Cartesian2D
-from scipy.stats import norm
+from scipy.stats import norm, expon
 from copy import copy, deepcopy
 
 class ToyTracker2D:
@@ -193,7 +193,7 @@ class ToyTracker2D:
         
         return ax
 
-    def simulate_event(self, particle):
+    def simulate_event(self, particle, doppler_broadening = True):
 
         # We need to copy position since we need to keep track where it is, but we don't want to change the
         # initial injection position
@@ -265,9 +265,12 @@ class ToyTracker2D:
                                        measured_y)
 
             # Determined which interaction type we have. Only Compton or total absorption for now.
+
+            int_type = 'absorption'
+            
             # If pair and compton, we assume that the e- and e+ are fully absorbed.
             compton_attenuation_coeff = self.material.compton_attenuation(particle.energy)
-
+            
             if np.random.uniform() < compton_attenuation_coeff / total_attenuation_coeff:
                 # Compton.
                 compton_physics = ComptonPhysics2D(particle.energy)
@@ -275,43 +278,62 @@ class ToyTracker2D:
                 # Get random direction
                 scattering_angle = compton_physics.random_scattering_angle(chirality = particle.chirality)
                 new_direction = particle.direction + scattering_angle
+
+                # Fudge doppler broadening by getting the corresponding outgoing
+                # energy for the obtained angle given a non-zero elecontr momentum.
+                # This is not really realistic, since the non-free electron
+                # also changes the theta distribution, and the electron are also bound
+                # 10 keV is not the bounding energy of an electron! But it gives a
+                # reasonable broadening that illustrates the effect
+                p_electron = None
+                if doppler_broadening:
+                    p_electron = np.random.uniform(-1,1)*expon(scale = 10).rvs()*u.keV
                 
                 # Derive the deposited energy from kinematics
-                energy_out = compton_physics.energy_out(scattering_angle)
+                energy_out = compton_physics.energy_out(scattering_angle, p_electron)
+
                 deposited_energy = particle.energy - energy_out
 
-                # Add measurement errors energy
-                energy_res = self.energy_resolution[layer_idx] * deposited_energy.value
-                measured_energy = norm.rvs(deposited_energy.value,
-                                           scale = energy_res)
-                measured_energy = np.maximum(0, measured_energy)
-                measured_energy *= deposited_energy.unit
-                
-                # Add interaction to tree
-                compton = Compton(position = new_pos,
-                                  energy = deposited_energy)
+                if deposited_energy > 0:
+                    # Rarely, for low energy photons, due to our fudge doppler
+                    # broadening, the photon can actually gain energy.
+                    # in that case consider it fully absorbed
+                    
+                    # Add measurement errors energy
+                    energy_res = self.energy_resolution[layer_idx] * deposited_energy.value
+                    measured_energy = norm.rvs(deposited_energy.value,
+                                               scale = energy_res)
+                    measured_energy = np.maximum(0, measured_energy)
+                    measured_energy *= deposited_energy.unit
 
-                compton.add_parent(particle)
+                    # Add interaction to tree
+                    int_type = 'compton'
+                    compton = Compton(position = new_pos,
+                                      energy = deposited_energy)
 
-                if deposited_energy > self.energy_threshold[layer_idx]:
-                    compton.set_measurement(layer = layer_idx,
-                                            position = measured_pos,
-                                            energy = measured_energy)
-                
-                # Add child particles (no electron, assumed fully absorbed for now)
-                photon = Photon(position = new_pos,
-                                direction = new_direction,
-                                energy = energy_out,
-                                chirality = particle.chirality)
+                    compton.add_parent(particle)
 
-                photon.add_parent(compton)
+                    if deposited_energy > self.energy_threshold[layer_idx]:
+                        compton.set_measurement(layer = layer_idx,
+                                                position = measured_pos,
+                                                energy = measured_energy)
 
-                # Continue simulation, iterative
-                child = self.simulate_event(photon)
+                    # Add child particles (no electron, assumed fully absorbed for now)
+                    photon = Photon(position = new_pos,
+                                    direction = new_direction,
+                                    energy = energy_out,
+                                    chirality = particle.chirality)
 
-            else:
-                # Full absorption
+                    photon.add_parent(compton)
 
+                    # Continue simulation, iterative
+                    child = self.simulate_event(photon)
+
+
+            
+            # If the event reached this point consider it fully absorbed
+            if int_type == 'absorption':
+            
                 # Add interaction to tree
                 absorption = Absorption(position = new_pos,
                                         energy = particle.energy)
@@ -322,7 +344,7 @@ class ToyTracker2D:
                 measured_energy = norm.rvs(particle.energy.value,
                                            scale = self.energy_resolution[layer_idx] * particle.energy.value)
                 measured_energy *= particle.energy.unit
-            
+
                 absorption.set_measurement(layer = layer_idx,
                                            position = measured_pos,
                                            energy = measured_energy)

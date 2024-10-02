@@ -35,6 +35,10 @@ class SimpleTraditionalReconstructor(ABC):
         #CDS
         phi = ComptonPhysics2D(measured_energy).scattering_angle(energy_out)
 
+        if np.isnan(phi):
+            # Unphysical. Likely a measurement error. Filter out
+            return RecoCompton()
+        
         psi = -np.arctan2(position_bottom.x - position_top.x,
                           position_top.y - position_bottom.y)
 

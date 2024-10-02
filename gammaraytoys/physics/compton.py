@@ -6,6 +6,7 @@ from histpy import Histogram,Axis
 import matplotlib.pyplot as plt
 
 _electron_mass = (c.m_e * c.c * c.c).to(u.keV)
+_electron_mass2 = _electron_mass*_electron_mass
 
 class ComptonPhysics2D:
     """
@@ -58,13 +59,25 @@ class ComptonPhysics2D:
         
         return phi
         
-    def energy_out(self, phi):
+    def energy_out(self, phi, p_electron = None):
 
-        return self.energy / (1 + self.epsilon * (1-np.cos(phi)))
+        if p_electron is None:
+            # Unbound and at rest
+            return self.energy / (1 + self.epsilon * (1-np.cos(phi)))
+        else:
+            p_electron2 = p_electron*p_electron
+            e_electron = np.sqrt(_electron_mass2 + p_electron2)
+            return (self.energy * (e_electron - p_electron) / (self.energy + e_electron - (self.energy+p_electron)*np.cos(phi)))
     
     def scattering_angle(self, energy_out):
 
-        return np.arccos(1 + _electron_mass*(1/self.energy - 1/energy_out))
+        cos_phi = 1 + _electron_mass*(1/self.energy - 1/energy_out)
+
+        if cos_phi < -1:
+            # Unphysical
+            return np.nan
+        
+        return np.arccos(cos_phi)
         
     def plot_scattering_angle_pdf(self, ax = None, **kwargs):
 
