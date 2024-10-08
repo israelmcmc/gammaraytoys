@@ -242,7 +242,7 @@ class PointSource(Source):
             self._flux = flux
         else:
             if flux_pivot is None or pivot_energy is None:
-                self._flux = False
+                self._flux = None
             else:
                 self._flux = (flux_pivot/spectrum.pdf(pivot_energy)).to(1/u.cm/u.s)
                 

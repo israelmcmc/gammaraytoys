@@ -14,14 +14,16 @@ class Simulator:
 
         if isinstance(sources, Source): 
             self.sources = [sources]
+            self.total_flux = sources.flux
+            self._relative_flux = [1]
         else:
             # Multiple sources
             self.sources = sources
 
-        fluxes = u.Quantity([s.flux for s in self.sources])
-
-        self.total_flux = np.sum(fluxes)
-        self._relative_flux = (fluxes/self.total_flux).to_value('')
+            fluxes = u.Quantity([s.flux for s in self.sources])
+            
+            self.total_flux = np.sum(fluxes)
+            self._relative_flux = (fluxes/self.total_flux).to_value('')
             
         self.reconstructor = reconstructor
 
@@ -30,12 +32,12 @@ class Simulator:
         self.ntrig = 0
         
         # Default, can be changed
-        self._photon_energy_axis = Axis(np.geomspace(.1,10,200)*u.MeV,
+        self._photon_energy_axis = Axis(np.geomspace(.2,50,200)*u.MeV,
                                           label = 'Ei',
                                           scale = 'log')
         self._offaxis_angle_axis = Axis(np.linspace(-180, 180, 360)*u.deg, label = 'Nu')
         self._chirality_axis = Axis([-2,0,2], label = 'k')
-        self._measured_energy_axis = Axis(np.geomspace(.1,10,200)*u.MeV,
+        self._measured_energy_axis = Axis(np.geomspace(.1,60,200)*u.MeV,
                                           label = 'Em',
                                           scale = 'log')
         self._phi_axis = Axis(np.linspace(0,180, 180)*u.deg, label = 'Phi')
@@ -52,12 +54,18 @@ class Simulator:
             raise ValueError("Specify one and only one finishing condition")
 
         if duration is not None:
-            nsim = int(np.round((self.total_flux*duration*self.detector.throwing_plane_size).to_value('')))
+            if self.total_flux is not None:
+                nsim = int(np.round((self.total_flux*duration*self.detector.throwing_plane_size).to_value('')))
+            else:
+                nsim = None
             # TBD after sims
             ntrig = np.inf
 
         elif nsim is not None:
-            duration = nsim/self.total_flux/self.detector.throwing_plane_size
+            if self.total_flux is not None:
+                duration = nsim/self.total_flux/self.detector.throwing_plane_size
+            else:
+                duration = None
             # TBD after sims
             ntrig = np.inf
             
@@ -224,14 +232,17 @@ class Simulator:
         while True:
 
             if np.isfinite(nsim_target):
-                print(f"nsim: {nsim}/{nsim_target}", end="\r")
+                print(f"nsim: {nsim}/{nsim_target} ntrig = {ntrig}", end="\r")
             else:
-                print(f"ntrig = {ntrig}/{ntrig_target}", end="\r")
+                print(f"ntrig = {ntrig}/{ntrig_target} nsim: {nsim}", end="\r")
             
             if terminate:
                 self.nsim += nsim
                 self.ntrig += ntrig
-                self.duration += (nsim/self.total_flux/self.detector.throwing_plane_size).to(u.s)
+                if self.total_flux is not None:
+                    self.duration += (nsim/(self.total_flux*self.detector.throwing_plane_size)).to(u.s)
+                else:
+                    self.duration = None
 
                 break
                 
