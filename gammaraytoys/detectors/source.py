@@ -72,7 +72,7 @@ class PowerLawSpectrum(Spectrum):
             # Special case
             self._norm = 1/min_energy/np.log(max_energy/min_energy)
         else:
-            self._norm = ((1+index)/(max_energy*np.pow(max_energy/min_energy, index)-min_energy)).to(1/self._eunit)
+            self._norm = ((1+index)/(max_energy*np.power(max_energy/min_energy, index)-min_energy)).to(1/self._eunit)
         
         class AuxEnergyPDF:
             pdf = lambda energy: self._pdf(energy)
@@ -95,7 +95,7 @@ class PowerLawSpectrum(Spectrum):
     
     def _pdf(self, energy):
         # in min_energy units
-        values = self._norm.value*np.pow(energy/self.min_energy.value, self.index)
+        values = self._norm.value*np.power(energy/self.min_energy.value, self.index)
 
         if np.ndim(values) == 0:
             if energy >= self.max_energy.value or energy < self.min_energy.value:
@@ -120,7 +120,7 @@ class PowerLawSpectrum(Spectrum):
             cumm = self._norm*self.min_energy*np.log(energy/self.min_energy.value)
             cumm = cumm.to_value('')
         else:
-            cumm = self._norm.value*(energy*np.pow(energy/self.min_energy.value, self.index)-self.min_energy.value)/(1+self.index)
+            cumm = self._norm.value*(energy*np.power(energy/self.min_energy.value, self.index)-self.min_energy.value)/(1+self.index)
             
         if np.ndim(cumm) == 0:
             if energy < self.min_energy.value:

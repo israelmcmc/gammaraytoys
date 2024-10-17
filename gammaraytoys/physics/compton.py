@@ -99,7 +99,7 @@ class ComptonPhysics2D:
 
         energy_out = self.energy_out(phi)
         
-        return 2 * np.pow(np.sin(phi), 2) / (energy_out/self.energy + self.energy/energy_out)
+        return 2 * np.power(np.sin(phi), 2) / (energy_out/self.energy + self.energy/energy_out)
 
     def plot_modulation_factor(self, ax = None, **kwargs):
 

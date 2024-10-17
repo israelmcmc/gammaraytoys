@@ -37,7 +37,7 @@ class ToyTracker2D:
         
         self._det_center = np.mean(det_edges)
         
-        self._surr_radius = np.sqrt(np.max(np.sum(np.pow(self._det_center.xyz[:,None] - det_edges.xyz, 2), axis = 0)))
+        self._surr_radius = np.sqrt(np.max(np.sum(np.power(self._det_center.xyz[:,None] - det_edges.xyz, 2), axis = 0)))
         
         # Checks
 
