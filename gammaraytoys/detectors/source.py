@@ -95,7 +95,16 @@ class PowerLawSpectrum(Spectrum):
     
     def _pdf(self, energy):
         # in min_energy units
-         return self._norm.value*np.pow(energy/self.min_energy.value, self.index)
+        values = self._norm.value*np.pow(energy/self.min_energy.value, self.index)
+
+        if np.ndim(values) == 0:
+            if energy >= self.max_energy.value or energy < self.min_energy.value:
+                values = 0
+        else:
+            values[energy < self.min_energy.value] = 0
+            values[energy >= self.max_energy.value] = 0
+             
+        return values
     
     def random_energy(self, size = None):
 
@@ -114,8 +123,10 @@ class PowerLawSpectrum(Spectrum):
             cumm = self._norm.value*(energy*np.pow(energy/self.min_energy.value, self.index)-self.min_energy.value)/(1+self.index)
             
         if np.ndim(cumm) == 0:
-            if energy < self.min_energy.value or energy > self.max_energy.value:
-                cumm == 0
+            if energy < self.min_energy.value:
+                cumm = 0
+            elif energy > self.max_energy.value:
+                cumm = 1
         else:
             cumm[energy < self.min_energy.value] = 0
             cumm[energy > self.max_energy.value] = 1
@@ -126,6 +137,67 @@ class PowerLawSpectrum(Spectrum):
 
         return self._cdf(energy.to_value(self._eunit))        
 
+
+class MultiComponentSpectrum(Spectrum):
+    
+    def __init__(self, *components, weights = None):
+        
+        if weights is None:
+            self.weights = np.ones(len(components))
+        else:
+            self.weights = np.array(weights, dtype = float)
+            
+        self.weights /= np.sum(self.weights)
+            
+        self.components = components
+        
+        self._min_energy = np.min(u.Quantity([c.min_energy for c in components]))
+        self._max_energy = np.max(u.Quantity([c.max_energy for c in components]))
+        
+    def ncomponents(self):
+        return len(self.components)
+        
+    @property
+    def min_energy(self):
+        return self._min_energy
+
+    @property
+    def max_energy(self):
+        return self._max_energy
+
+    def random_energy(self, size = None):
+
+        component_idx = np.random.choice(self.ncomponents, size = size, p = self.weights)
+        
+        energies = []
+        
+        for ncomponent in range(self.ncomponents):
+            
+            nsamples = np.sum(component_idx == ncomponent)
+            
+            energies.append(self.components[component_idx].random_energy(size = nsamples))
+            
+        energies = u.Quantity(np.shuffle(energies))
+        
+        return energies
+
+    def pdf(self, energy):
+
+        prob = u.Quantity([w*c.pdf(energy) for c,w in zip(self.components, self.weights)])
+        
+        prob = np.sum(prob, axis = None if np.ndim(energy) == 0 else 0)
+        
+        return prob
+
+    def cdf(self, energy):
+
+        cdf = [w*c.cdf(energy) for c,w in zip(self.components, self.weights)]
+        
+        cdf = np.sum(cdf, axis = None if np.ndim(energy) == 0 else 0)
+        
+        return cdf
+    
+    
 class Source(ABC):
 
     @property
@@ -175,7 +247,7 @@ class Source(ABC):
             energy_units = u.Unit(energy_units)
 
         if discretize_axis is None:
-            energy = np.geomspace(self.spectrum.min_energy, self.spectrum.max_energy, 100).to(energy_units)
+            energy = np.geomspace(self.spectrum.min_energy, self.spectrum.max_energy, 1000).to(energy_units)
             y = self.diff_flux(energy)
         else:
             discretize_axis = Axis(discretize_axis)
