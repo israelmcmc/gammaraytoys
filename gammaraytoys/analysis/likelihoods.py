@@ -6,7 +6,7 @@ def poisson_binned_log_likelihood(data, expectation):
     #log_like = np.sum(np.log(np.power(expectation, data) * np.exp(-expectation) / factorial(data)))
     # The factorial is taken out since it's a constant and only likelihood *differences* matter
     
-    log_like = np.sum(data*np.log(expectation) - expectation)
+    log_like = np.nansum(data*np.log(expectation) - expectation)
     
     return log_like
 

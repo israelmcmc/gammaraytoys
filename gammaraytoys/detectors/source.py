@@ -102,7 +102,7 @@ class PowerLawSpectrum(Spectrum):
                 values = 0
         else:
             values[energy < self.min_energy.value] = 0
-            values[energy >= self.max_energy.value] = 0
+            values[energy > self.max_energy.value] = 0
              
         return values
     
@@ -284,9 +284,6 @@ class Source(ABC):
         ax.set_xlabel(f'Energy [{energy_units}]')
 
         ax.set_ylabel(y_label)
-
-        ax.set_ylim(10**(np.floor(np.log10(np.array(np.min(y))))-1),
-                    10**(np.ceil(np.log10(np.array(np.max(y))))+1))
 
         return ax
         
