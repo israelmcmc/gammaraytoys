@@ -98,7 +98,7 @@ class PowerLawSpectrum(Spectrum):
         values = self._norm.value*np.power(energy/self.min_energy.value, self.index)
 
         if np.ndim(values) == 0:
-            if energy >= self.max_energy.value or energy < self.min_energy.value:
+            if energy > self.max_energy.value or energy < self.min_energy.value:
                 values = 0
         else:
             values[energy < self.min_energy.value] = 0

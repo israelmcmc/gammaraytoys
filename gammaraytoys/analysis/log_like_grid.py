@@ -1,5 +1,5 @@
 from histpy import Histogram
-import tqdm
+from tqdm import tqdm
 import numpy as np
 import itertools
 from scipy.stats import chi2
