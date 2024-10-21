@@ -3,6 +3,7 @@ from astropy import units as u
 import numpy as np
 from .reco import RecoCompton
 from .source import Source
+from tqdm import tqdm
 
 class Simulator:
 
@@ -228,45 +229,45 @@ class Simulator:
         ntrig = 0
 
         terminate = False
+
+        with tqdm(total = nsim_target if np.isfinite(nsim_target) else ntrig_target) as pbar:
         
-        while True:
+            while True:
 
-            if np.isfinite(nsim_target):
-                print(f"nsim: {nsim}/{nsim_target} ntrig = {ntrig}", end="\r")
-            else:
-                print(f"ntrig = {ntrig}/{ntrig_target} nsim: {nsim}", end="\r")
-            
-            if terminate:
-                self.nsim += nsim
-                self.ntrig += ntrig
-                if self.total_flux is not None:
-                    self.duration += (nsim/(self.total_flux*self.detector.throwing_plane_size)).to(u.s)
-                else:
-                    self.duration = None
+                if terminate:
+                    self.nsim += nsim
+                    self.ntrig += ntrig
+                    if self.total_flux is not None:
+                        self.duration += (nsim/(self.total_flux*self.detector.throwing_plane_size)).to(u.s)
+                    else:
+                        self.duration = None
 
-                break
+                    break
+
+                nsim += 1
+
+                source = self.sources[np.random.choice(range(self.nsources),
+                                                       p = self._relative_flux)]
+
+                primary = source.random_photon(self.detector)
+
+                sim_event = self.detector.simulate_event(primary,
+                                                         doppler_broadening = self.doppler_broadening)
+
+                reco_event = self.reconstructor.reconstruct(sim_event)
+
+                if np.isfinite(nsim_target) or reco_event.triggered:
+                    pbar.update()
                 
-            nsim += 1
-
-            source = self.sources[np.random.choice(range(self.nsources),
-                                                   p = self._relative_flux)]
-            
-            primary = source.random_photon(self.detector)
-            
-            sim_event = self.detector.simulate_event(primary,
-                                                     doppler_broadening = self.doppler_broadening)
-
-            reco_event = self.reconstructor.reconstruct(sim_event)
-
-            if nsim >= nsim_target:
-                terminate = True
-                
-            if reco_event.triggered:
-                ntrig += 1
-
-                if ntrig >= ntrig_target:
+                if nsim >= nsim_target:
                     terminate = True
-                
-            yield sim_event, reco_event
-            
+
+                if reco_event.triggered:
+                    ntrig += 1
+
+                    if ntrig >= ntrig_target:
+                        terminate = True
+
+                yield sim_event, reco_event
+
         
